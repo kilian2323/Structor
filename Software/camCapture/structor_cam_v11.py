@@ -6,14 +6,16 @@ import time
 import math
 from picamera.array import PiRGBArray
 from picamera import PiCamera
+import logging
 
 ### Operating mode
 
-use_crop_sliders = True      # If True, cropping area may be manually defined using sliders
+logging.basicConfig(level=logging.INFO)
+use_crop_sliders = True      # [False] If True, cropping area may be manually defined using sliders (only available if use_imageOutput == True)
 static_crop_margins = np.array([0,0,0,0],dtype=int) # left, top, right, bottom
-use_autoCurves1 = False    # If True [recommended for some images], program will perform histogram autotune on the original image
-use_imageOutput = False     # Activate or deactivate output images and cv2.waitKey()
-saveTiles = True            # If True, all available tiles will be saved to filesystem as bitmaps
+use_autoCurves1 = False      # If True [recommended for some images], program will perform histogram autotune on the original image
+use_imageOutput = False      # Activate or deactivate output images and cv2.waitKey()
+saveTiles = False            # [False] If True, all available tiles will be saved to filesystem as bitmaps
 
 ### Settings for detection of tile types
 
@@ -54,6 +56,7 @@ numIdentified = 0
 gridsize = None
 givenTiles = None
 plausible = False
+resultObject = None
 
 ### Window objects names
 
@@ -120,11 +123,11 @@ class Tile:
 		return obj
 		
 	def print(self):
-		print("Tile "+str(self.num))
-		print("  Base signature       : "+str(self.baseSignature))
-		print("  Distinct orientations: "+str(self.numRotations+1))
-		print("  Needs extra probe    : "+str(self.needsExtraProbe))
-		print("  Extra probe value    : "+str(self.extraProbeValue))
+		logging.debug("Tile "+str(self.num))
+		logging.debug("  Base signature       : "+str(self.baseSignature))
+		logging.debug("  Distinct orientations: "+str(self.numRotations+1))
+		logging.debug("  Needs extra probe    : "+str(self.needsExtraProbe))
+		logging.debug("  Extra probe value    : "+str(self.extraProbeValue))
 		
 	def isMe(self,signature):
 		thisSignature = self.baseSignature.copy()
@@ -183,14 +186,14 @@ class Result:
 		return obj
 		
 	def printAll(self):
-		print("Original image pixel size: (w x h)"+str(self.img_original_pxSize[0])+" x "+str(self.img_original_pxSize[1]))
-		print("Probed values:\n  "+str(self.detection_tiles_probes))
-		print("Probes confidences:\n  "+str(self.detection_confidences))
-		print("Tiles identified:\n  "+str(self.detection_identified))
-		print("Overall avg. confidence: "+str(self.detection_avgConfidence))
+		logging.debug("Original image pixel size: (w x h)"+str(self.img_original_pxSize[0])+" x "+str(self.img_original_pxSize[1]))
+		logging.debug("Probed values:\n"+str(self.detection_tiles_probes))
+		logging.debug("Probes confidences:\n"+str(self.detection_confidences))
+		logging.debug("Tiles identified:\n "+str(self.detection_identified))
+		logging.info("Overall avg. confidence: "+str(self.detection_avgConfidence))
 		
-		print("\nResult signature:\n  "+str(self.result_signature))
-		print("Detection success: "+str(self.detection_success))
+		logging.info("Result signature:\n"+str(self.result_signature))
+		logging.info("Detection success: "+str(self.detection_success))
 		
 
 
@@ -201,7 +204,7 @@ def initialize():
 	
 	# initialize the camera 
 	
-	camera = PiCamera(resolution=(1280, 720), framerate=10)
+	camera = PiCamera(resolution=(1280, 720), framerate=1)
 
 	# set camera parameters
 	camera.iso = 100
@@ -212,18 +215,13 @@ def initialize():
 	camera.awb_mode = 'off'
 	camera.awb_gains = g
 
-	# grab a reference to the raw camera capture
-	rawCapture = PiRGBArray(camera)
-	#print(type(rawCapture))
-
-	# allow the camera to warmup
-	time.sleep(0.5)		
+	
 		
 	if use_crop_sliders == True and use_imageOutput == True:
-		cv2.createTrackbar(slider_crop_left_name, win0 , 0, (int)(1280/2), left_margin_trackbar)
-		cv2.createTrackbar(slider_crop_top_name, win0 , 0, (int)(720/2), top_margin_trackbar)
-		cv2.createTrackbar(slider_crop_right_name, win0 , 0, (int)(1280/2), right_margin_trackbar)
-		cv2.createTrackbar(slider_crop_bottom_name, win0 , 0, (int)(720/2), bottom_margin_trackbar)
+		cv2.createTrackbar(slider_crop_left_name, win0 , static_crop_margins[0], (int)(1280/2), left_margin_trackbar)
+		cv2.createTrackbar(slider_crop_top_name, win0 , static_crop_margins[1], (int)(720/2), top_margin_trackbar)
+		cv2.createTrackbar(slider_crop_right_name, win0 , static_crop_margins[2], (int)(1280/2), right_margin_trackbar)
+		cv2.createTrackbar(slider_crop_bottom_name, win0 , static_crop_margins[3], (int)(720/2), bottom_margin_trackbar)
 		
 	
 	
@@ -332,6 +330,12 @@ def getImage():
 	global rawCapture
 	global mult
 	
+	# grab a reference to the raw camera capture
+	rawCapture = PiRGBArray(camera)
+
+	# allow the camera to warmup
+	time.sleep(0.5)		
+	
 	### Get camera image	
 	
 	camera.capture(rawCapture, format="bgr")
@@ -342,7 +346,7 @@ def getImage():
 	### Determine image size
 
 	h,w,_ = img.shape
-	print("Image: "+str(w)+" x "+str(h)+" px")
+	logging.debug("Image: "+str(w)+" x "+str(h)+" px")
 	resultObject.img_original_pxSize = np.array([w,h])
 
 	### Resize (for display purposes only)
@@ -412,7 +416,7 @@ def cropImage():
 		cv2.waitKey(1)
 
 	
-def showOriginalImage():
+def defineCropMargins():
 	global x, y, rw, rh, gridsize
 	global img2
 	
@@ -445,7 +449,7 @@ def showOriginalImage():
 		cv2.line(img2, (left_end[0],left_end[1]), (right_end[0],right_end[1]), (255, 255, 0), 4, 1)	        # bottom border
 		
 		gridsize = np.array([(round(mult*rw/5)),(round(mult*rh/5))], dtype=int)		
-		#print("gridsize: "+str(gridsize))
+		#logging.debug("gridsize: "+str(gridsize))
 		
 		for col in range(1,5):
 			line_start = np.array([left_start[0] + col*gridsize[0],left_start[1]],dtype=int)
@@ -476,12 +480,12 @@ def initializeAnalysis():
 	confidences = np.zeros(5*25).reshape(5,5,5).astype(float)
 	identified = np.zeros(25).reshape(5,5).astype(bool)
 	avgConfidences = np.zeros(25).reshape(5,5).astype(float)
-	print("Gridsize: "+str(gridsize[0])+" x "+str(gridsize[1]))
+	logging.debug("Gridsize: "+str(gridsize[0])+" x "+str(gridsize[1]))
 	
 	gridShortest = min(gridsize[0],gridsize[1])
 	rectHalfLong = np.floor(gridShortest * 0.5 * 0.5).astype("uint8")
 	rectHalfShort = np.floor(rectHalfLong/11).astype("uint8")
-	print("Probe rect: "+str(2*rectHalfLong)+" x "+str(2*rectHalfShort)+" px")
+	logging.debug("Probe rect: "+str(2*rectHalfLong)+" x "+str(2*rectHalfShort)+" px")
 
 
 def optimizeCropImage():
@@ -494,7 +498,7 @@ def optimizeCropImage():
 def identifyTiles():
 	global signatures, confidences, averages, avgConfidences, resultObject, numIdentified
 	
-	print("Identifying tiles (pass 1)...")
+	logging.debug("Identifying tiles (pass 1)...")
 	
 	for col in range(5):
 		for row in range(5):
@@ -533,7 +537,7 @@ def identifyTiles():
 			# avgs[] now holds the five probe values for this tile
 
 			resultObject.detection_tiles_probes[col][row][:] = avgs[:]
-			#print(resultObject.detection_tiles_probes[col][row])
+			#logging.debug(resultObject.detection_tiles_probes[col][row])
 
 			for i in range(5):
 				averages[col][row][i] = avgs[i]
@@ -555,31 +559,31 @@ def identifyTiles():
 				
 			### Identify tile type and orientation
 
-			print("\nIdentifying tile (col,row): "+str(col)+","+str(row))			
-			print("  Signature: "+str(signatures[col][row]))	
-			print("  Detection confidence: "+str(avgConfidences[col][row]))		
+			logging.debug("\nIdentifying tile (col,row): "+str(col)+","+str(row))			
+			logging.debug("  Signature: "+str(signatures[col][row]))	
+			logging.debug("  Detection confidence: "+str(avgConfidences[col][row]))		
 			for givenTile in givenTiles:
 				rot = givenTile.isMe(signatures[col][row])
 				if rot > -1:
 					numIdentified += 1
 					identified[col][row] = True
-					print("Found! Tile = "+str(givenTile.num)+", orientation = "+str(rot))
+					logging.debug("Found! Tile = "+str(givenTile.num)+", orientation = "+str(rot))
 					identifiers[col][row][0] = givenTile.num
 					identifiers[col][row][1] = rot
 					break
 					
 					
 					
-	print("\nIdentified tiles (after pass 1): "+str(numIdentified))		
+	logging.info("Identified tiles (after pass 1): "+str(numIdentified))		
 
 	if numIdentified < 25:		
-		print("Identifying tiles (pass 2)...")
+		logging.debug("Identifying tiles (pass 2)...")
 		for col in range(5):
 			for row in range(5):
 				if identified[col][row] == False:	
-					print("\nIdentifying remaining tile (col,row): "+str(col)+","+str(row))			
-					print("  Signature: "+str(signatures[col][row]))	
-					print("  Detection confidence: "+str(avgConfidences[col][row]))		
+					logging.debug("Identifying remaining tile (col,row): "+str(col)+","+str(row))			
+					logging.debug("  Signature: "+str(signatures[col][row]))	
+					logging.debug("  Detection confidence: "+str(avgConfidences[col][row]))		
 					for i in range(5):
 						if confidences[col][row][i] <= 0.5:
 							
@@ -590,7 +594,7 @@ def identifyTiles():
 									if rot > -1:
 										numIdentified += 1
 										identified[col][row] = True
-										print("Found (case a)! Tile = "+str(givenTile.num)+", orientation = "+str(rot))
+										logging.debug("Found (case a)! Tile = "+str(givenTile.num)+", orientation = "+str(rot))
 										identifiers[col][row][0] = givenTile.num
 										identifiers[col][row][1] = rot
 										signatures[col][row][i] = 0
@@ -605,7 +609,7 @@ def identifyTiles():
 									if rot > -1:
 										numIdentified += 1
 										identified[col][row] = True
-										print("Found (case b1)! Tile = "+str(givenTile.num)+", orientation = "+str(rot))
+										logging.debug("Found (case b1)! Tile = "+str(givenTile.num)+", orientation = "+str(rot))
 										identifiers[col][row][0] = givenTile.num
 										identifiers[col][row][1] = rot
 										signatures[col][row][i] = 0.5
@@ -616,7 +620,7 @@ def identifyTiles():
 										if rot > -1:
 											numIdentified += 1
 											identified[col][row] = True
-											print("Found (case b2)! Tile = "+str(givenTile.num)+", orientation = "+str(rot))
+											logging.debug("Found (case b2)! Tile = "+str(givenTile.num)+", orientation = "+str(rot))
 											identifiers[col][row][0] = givenTile.num
 											identifiers[col][row][1] = rot
 											signatures[col][row][i] = 0.5
@@ -630,7 +634,7 @@ def identifyTiles():
 									rot = givenTile.isMe(signatures[col][row])
 									if rot > -1:
 										numIdentified += 1
-										print("Found (case c)! Tile = "+str(givenTile.num)+", orientation = "+str(rot))
+										logging.debug("Found (case c)! Tile = "+str(givenTile.num)+", orientation = "+str(rot))
 										identifiers[col][row][0] = givenTile.num
 										identifiers[col][row][1] = rot
 										signatures[col][row][i] = 1
@@ -638,7 +642,7 @@ def identifyTiles():
 									else:
 										signatures[col][row][i] = 1								
 					
-		print("\nIdentified tiles (after pass 2): "+str(numIdentified))
+		logging.info("Identified tiles (after pass 2): "+str(numIdentified))
 
 
 def checkPlausibility():
@@ -656,7 +660,7 @@ def checkPlausibility():
 				plausible = False
 				break
 		
-	print("\nResult might be okay: "+str(plausible))
+	logging.info("Result might be okay: "+str(plausible))
 
 
 
@@ -668,14 +672,14 @@ def checkPlausibility():
 ###########################              ################################################################################################################
 #########################################################################################################################################################
 
-
-
-def run():
-	global resultObject
+def setup():	
 	global state
 	
 	state = 1	
 	initialize() ### Initialize camera, output window for original and crop sliders
+
+def prepare():
+	global resultObject
 	
 	state = 2
 	createTiles() ### Create fundamental tile objects with parameters
@@ -683,15 +687,22 @@ def run():
 	state = 3
 	resultObject = Result() ### Create result object
 	
+	
+def capture():
 	state = 4
 	getImage() ### Take the image from file or camera
 	
 	state = 5
-	optimizeImage() ### Apply auto curves 1
+	optimizeImage() ### Apply auto curves 1	
+
+
+def identify():
+	global resultObject
+	global state	
+	
 	
 	state = 6
-	showOriginalImage() ### Show original image (with sliders, if use_crop_sliders == True)
-
+	defineCropMargins() ### Show original image (with sliders, if use_crop_sliders == True)
 		
 	########################################################################
 	### CROP IMAGE AND IDENTIFY TILES ######################################
@@ -730,7 +741,7 @@ def run():
 
 	outputImage = np.zeros(pxSize*pxSize*5*5).reshape(5*pxSize,5*pxSize)
 
-	print("\nBrightness values:")
+	brightnessString = "Brightness values:\n  "
 	for col in range(5):
 		for row in range(5):		
 			start_y = row*pxSize
@@ -739,12 +750,12 @@ def run():
 			rotNum = identifiers[col][row][1]
 			thisTile = givenTiles[tileNum].rotImage(rotNum).copy()			
 			outputImage[start_y:start_y+pxSize, start_x:start_x+pxSize] = thisTile	
-			print( str(givenTiles[tileNum].brightness) ,end=' ')
-
-	print("\n")
+			brightnessString += (str(givenTiles[tileNum].brightness)+" ")
+			
+	logging.debug( brightnessString +"\n")
 
 	if plausible == True:
-		print("\nStructor image signature:\n"+str(identifiers.flatten()))
+		logging.debug("Structor image signature:\n"+str(identifiers.flatten()))
 		
 	resultObject.result_signature = identifiers.copy()
 	resultObject.img_result = outputImage.copy()
@@ -761,7 +772,10 @@ def run():
 	state = 15
 	
 if __name__ == "__main__":
-	run()	
+	setup()
+	prepare()
+	capture()
+	identify()	
 	
 	
 
