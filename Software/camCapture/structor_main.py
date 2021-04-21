@@ -1,10 +1,12 @@
 #!/usr/bin/python3
+
 from __future__ import print_function
 import threading
 import cv2
 import numpy as np
 import random
 import structor_cam_v11 as structor
+import structor_gpio as gpio
 import time
 from PIL import Image
 from PIL import ImageDraw
@@ -14,8 +16,9 @@ win_ui = "Structor GUI"
 displaySize = np.array([1920,1080],dtype=int)
 time1 = 300  # time (seconds) to finish the puzzle
 time2 = 15   # additional time (seconds) to finish the puzzle
-waitBeforeCapture = 5 # time (seconds) to wait for the user to remove hands
-waitAfterAnalysis = 2 # time (seoncds) to wait when analysis reaches 100%
+waitBeforeCapture = 5  # time (seconds) to wait for the user to remove hands
+waitAfterAnalysis = 2  # time (seoncds) to wait when analysis reaches 100%
+waitAfterFinished = 15 # time (seconds) to display final result screen before restarting the app
 
 
 ###########
@@ -39,11 +42,13 @@ def gui():
 	### Setting up Structor
 	print("Setting up Structor")
 	structor.setup()
+	gpio.start_button_listener()
 	
-	######## TODO: From here: endless loop; application stays open and repeats forever ########
+	######## From here: endless loop; application stays open and repeats forever ########
 	
 	
 	while(True):
+		gpio.startPressed = False
 	
 		### Preparing Structor
 		gui_state = 1
@@ -71,15 +76,16 @@ def gui():
 		### TODO: Waiting for user start signal
 		gui_state = 3
 		print("Waiting for user start signal")
-		key = 0
-		while key <= 0:
+		gpio.startPressed = False
+		while gpio.startPressed == False:
 			cv2.imshow(win_ui, gui_image)
-			key = cv2.waitKey(0)	        # TODO: This should be waitKey(10) or something, and key should be set through GPIO button input
+			cv2.waitKey(1)
+			time.sleep(0.01)
+		gpio.startPressed = False
 			
 		### Running countdown timer, waiting for key push or timeout
 		gui_state = 4
 		timecount = time1
-		key = 0
 		gui_image = gui_bg.copy()
 		gui_text1 = create_img_text("Please assemble your image now.",1000,80,50)    
 		gui_text2 = create_img_text("Push the button when you're done.",1000,80,50)  
@@ -89,36 +95,39 @@ def gui():
 		gui_image = addImages(gui_image,gui_text2,300,300)
 		gui_image = addImages(gui_image,gui_timerLine1,300,550)
 		gui_image = addImages(gui_image,gui_timerLine2,300,750)
-		while timecount >= 0 and key <= 0:		
+		gpio.startPressed = False
+		while timecount >= 0 and gpio.startPressed == False:		
 			minutes = int(np.floor(timecount / 60))
 			seconds = timecount - minutes * 60
 			timerText = "0%d : %02d" % (minutes, seconds)
 			gui_timerText = create_img_text(timerText,1000,110,100)
 			gui_image = clearOut(gui_image,300,625,1000,110,255)
 			gui_image = addImages(gui_image,gui_timerText,300,625)
-			time.sleep(0.9)
+			time.sleep(0.999)
 			cv2.imshow(win_ui, gui_image) 
-			key = cv2.waitKey(100)
+			cv2.waitKey(1)
 			timecount -= 1
+		gpio.startPressed = False
 			
 		if timecount < 0:
 			timecount = 0
 			### "Hurry up" timer (additional 15 seconds maximum)
-			key = 0
 			gui_image = gui_bg.copy()
 			gui_timerLine1 = create_img_text("Please finish within 15 seconds!",1000,80,50)
 			gui_image = addImages(gui_image,gui_timerLine1,300,200)
-			while timecount <= time2 and key <= 0:
+			gpio.startPressed = False
+			while timecount <= time2 and gpio.startPressed == False:
 				minutes = int(np.floor(timecount / 60))
 				seconds = timecount - minutes * 60
 				timerText = "+ 0%d : %02d" % (minutes, seconds)
 				gui_timerText = create_img_text(timerText,1000,160,100)
 				gui_image = clearOut(gui_image,300,500,1000,160,255)
 				gui_image = addImages(gui_image,gui_timerText,300,500)
-				time.sleep(0.9)
+				time.sleep(0.999)
 				cv2.imshow(win_ui, gui_image) 
-				key = cv2.waitKey(100)
+				key = cv2.waitKey(1)
 				timecount += 1
+			gpio.startPressed = False
 				
 		### The image is finished now	
 		gui_state = 5
@@ -190,8 +199,16 @@ def gui():
 		gui_image = addImages(gui_image,resultImage,300,400)
 		cv2.rectangle(gui_image, (295,395),(295+510,395+510),0,2)
 		
-		cv2.imshow(win_ui, gui_image) 
-		cv2.waitKey(10000)
+		timeCounter = 0
+		gpio.startPressed = False
+		while gpio.startPressed == False:		
+			cv2.imshow(win_ui, gui_image) 
+			cv2.waitKey(1)
+			time.sleep(0.999)
+			timeCounter += 1
+			if timeCounter > waitAfterFinished:
+				break
+		gpio.startPressed = False
 		
 	
 
@@ -200,6 +217,7 @@ def run_thread_structor(name):
 	print("----- Thread %s: starting" % name)
 	structor.identify()
 	print("----- Thread %s: finishing" % name)
+
     
 
 def create_img_bg():
