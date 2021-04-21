@@ -7,13 +7,13 @@ import math
 from picamera.array import PiRGBArray
 from picamera import PiCamera
 
-
 ### Operating mode
 
 use_crop_sliders = True      # If True, cropping area may be manually defined using sliders
 static_crop_margins = np.array([0,0,0,0],dtype=int) # left, top, right, bottom
 use_autoCurves1 = False    # If True [recommended for some images], program will perform histogram autotune on the original image
 use_imageOutput = False     # Activate or deactivate output images and cv2.waitKey()
+saveTiles = True            # If True, all available tiles will be saved to filesystem as bitmaps
 
 ### Settings for detection of tile types
 
@@ -38,6 +38,7 @@ camera = None
 rawCapture = None
 img = None
 img_cropped = None
+bitmaps = None
 w = None
 h = None
 w2 = None
@@ -198,9 +199,6 @@ def initialize():
 	global camera
 	global rawCapture
 	
-	
-	
-	
 	# initialize the camera 
 	
 	camera = PiCamera(resolution=(1280, 720), framerate=10)
@@ -235,9 +233,8 @@ def initialize():
 def createTiles():
 	global baseSignatures
 	global numRotations
-	global bitmaps
-	global pxSize
 	global givenTiles
+	global bitmaps
 
 	### Define all existing tiles
 
@@ -295,6 +292,10 @@ def createBitmaps():
 					bitmaps[6][r][c] = 255
 					if c <= r:
 						bitmaps[3][r][c] = 255	
+	if saveTiles == True:
+		for t in range(10):
+			saveName = "tile_"+str(t)+".bmp"
+			cv2.imwrite(saveName,bitmaps[t])
 
 def defineRotations():
 	global numRotations
