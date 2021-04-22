@@ -205,18 +205,16 @@ def initialize():
 	
 	# initialize the camera 
 	
-	camera = PiCamera(resolution=(1280, 720), framerate=1)
+	camera = PiCamera(resolution=(1280, 720), framerate=10)
 
 	# set camera parameters
-	camera.iso = 100
+	camera.iso = 400
 	time.sleep(2)
 	camera.shutter_speed = camera.exposure_speed
 	camera.exposure_mode = 'off'
 	g = camera.awb_gains
 	camera.awb_mode = 'off'
 	camera.awb_gains = g
-
-	
 		
 	if use_crop_sliders == True and use_imageOutput == True:
 		cv2.createTrackbar(slider_crop_left_name, win0 , static_crop_margins[0], (int)(1280/2), left_margin_trackbar)
@@ -695,22 +693,21 @@ def capture():
 	
 	state = 5
 	optimizeImage() ### Apply auto curves 1	
+	
+	state = 6
+	defineCropMargins() ### Show original image (with sliders, if use_crop_sliders == True)
+	
+	state = 7
+	cropImage() ### Apply the crop to the original image
 
 
 def identify():
 	global resultObject
 	global state	
-	
-	
-	state = 6
-	defineCropMargins() ### Show original image (with sliders, if use_crop_sliders == True)
-		
+			
 	########################################################################
-	### CROP IMAGE AND IDENTIFY TILES ######################################
+	### IDENTIFY TILES #####################################################
 	########################################################################
-
-	state = 7
-	cropImage() ### Apply the crop to the original image
 
 	state = 8
 	initializeAnalysis() ### Initialze variables used for analysis
