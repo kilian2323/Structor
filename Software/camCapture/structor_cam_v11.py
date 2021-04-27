@@ -13,7 +13,7 @@ import logging
 
 logging.basicConfig(level=logging.INFO)
 use_crop_sliders = True      # [False] If True, cropping area may be manually defined using sliders (only available if use_imageOutput == True)
-static_crop_margins = np.array([0,0,0,0],dtype=int) # left, top, right, bottom
+static_crop_margins = np.array([280,0,280,0],dtype=int) # (px) left, top, right, bottom
 use_autoCurves1 = False      # If True [recommended for some images], program will perform histogram autotune on the original image
 use_imageOutput = False      # Activate or deactivate output images and cv2.waitKey()
 saveTiles = False            # [False] If True, all available tiles will be saved to filesystem as bitmaps
@@ -37,6 +37,7 @@ thr_white = 255
 ######################################################
 
 state = 0
+ident_state = 0
 camera = None
 rawCapture = None
 img = None
@@ -495,9 +496,9 @@ def optimizeCropImage():
 		img_cropped_gray[img_cropped_gray >= thr_black] = 255	
 		
 def identifyTiles():
-	global signatures, confidences, averages, avgConfidences, resultObject, numIdentified
+	global signatures, confidences, averages, avgConfidences, resultObject, numIdentified, ident_state
 	
-	logging.debug("Identifying tiles (pass 1)...")
+	logging.debug("Identifying tiles (pass 1)...")	
 	
 	for col in range(5):
 		for row in range(5):
@@ -517,6 +518,7 @@ def identifyTiles():
 					val3 = tile[int(round(gridsize[1]/2-rectHalfLong)+r)][int(round(3*gridsize[0]/4-rectHalfShort)+c)]
 					sums[0] += val1
 					sums[2] += val3
+					ident_state += 1
 			
 			for c in range(int(2*rectHalfLong)):
 				for r in range(int(2*rectHalfShort)):					
@@ -524,14 +526,17 @@ def identifyTiles():
 					val4 = tile[int(round(3*gridsize[1]/4-rectHalfShort)+r)][int(round(gridsize[0]/2-rectHalfLong)+c)]			
 					sums[1] += val2
 					sums[3] += val4
+					ident_state += 1
 			
 			for c in range(int(2*rectHalfShort)):
 				for r in range(int(2*rectHalfShort)):
 					val5 = tile[int(round(gridsize[1]/4-rectHalfShort)+r)][int(round(gridsize[0]/4-rectHalfShort)+c)]
 					sums[4] += val5
+					ident_state += 1
 
 			for i in range(4):
 				avgs[i] = sums[i] / (4*rectHalfLong*rectHalfShort)
+				ident_state += 1
 			avgs[4] = sums[4] / (4*rectHalfShort*rectHalfShort)
 			# avgs[] now holds the five probe values for this tile
 
@@ -703,12 +708,13 @@ def capture():
 
 def identify():
 	global resultObject
-	global state	
+	global state, ident_state	
 			
 	########################################################################
 	### IDENTIFY TILES #####################################################
 	########################################################################
 
+	ident_state = 0
 	state = 8
 	initializeAnalysis() ### Initialze variables used for analysis
 

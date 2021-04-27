@@ -20,8 +20,8 @@ time2 = 15   # max. additional time (seconds) to finish the puzzle
 waitBeforeCapture = 5  # time (seconds) to wait for the user to remove hands
 waitAfterCapture = 3   # time (seconds) to wait after image has been captured (displaying photo during this time)
 waitAfterAnalysis = 2  # time (seoncds) to wait when analysis reaches 100%
-waitAfterFinished = 15 # time (seconds) to display final result screen before displaying end screen (if no button pushed)
-waitAfterEnd = 5       # time (seconds) to display end screen before restarting the session (if no button pushed)
+waitAfterFinished = 20 # time (seconds) to display final result screen before displaying end screen (if no button pushed)
+waitAfterEnd = 1       # time (seconds) to display end screen before restarting the session
 
 ###########
 
@@ -121,11 +121,11 @@ def gui():
 			sound.play_button()	
 			io.startPressed = False
 		else:
-			sound.play_timeout()			
-			
+			sound.play_timeout()				
+		
+		### "Hurry up" timer (additional 15 seconds maximum)	
 		if timecount < 0:
-			timecount = 0
-			### "Hurry up" timer (additional 15 seconds maximum)
+			timecount = 0			
 			gui_image = gui_bg.copy()
 			gui_timerLine1 = create_img_text("Please finish within 15 seconds!",1000,80,50)
 			gui_image = addImages(gui_image,gui_timerLine1,300,200)
@@ -176,15 +176,15 @@ def gui():
 		cv2.imshow(win_ui, gui_image) 
 		cv2.waitKey(1)
 		
-		### Starting structor capture
+		### Executing structor capture
 		print("Starting structor capture & crop")
 		gui_state += 1
 		structor.capture()
 		
 		### Displaying the cropped photo on the screen
-		photo = structor.img_cropped_gray.copy()
-		photo = cv2.resize(photo,(350,350))
-		gui_image = addImages(gui_image,photo,300,600)
+		gui_image = gui_bg.copy()
+		photo = create_img_photo(structor.img_cropped_gray, 700)	
+		gui_image = addImages(gui_image,photo,int(displaySize[0]/2-350),int(displaySize[1]/2-350))
 		cv2.imshow(win_ui, gui_image) 
 		cv2.waitKey(waitAfterCapture*1000)		
 		
@@ -197,25 +197,22 @@ def gui():
 		gui_state += 1
 		gui_image = gui_bg.copy()
 		gui_text1 = create_img_text("Identifying...",1000,80,50)
-		gui_image = addImages(gui_image,gui_text1,300,300)
+		gui_image = addImages(gui_image,gui_text1,750,int(displaySize[1]/2+375+15))
 		pct = 0.0
 		while structor.state <= 15:
-			pct_max = 100.0 * (structor.state - 6) / 9.0
-			pct_min = 100.0 * (structor.state - 7) / 9.0
-			pct += 1.5
-			pct = min(pct,pct_max)
-			pct = max(pct,pct_min)
-			gui_image = clearOut(gui_image,300,800,1600,tileSize,255)
-			#gui_pct_text = create_img_text(str(pct)+"%",100,80,25)		
-			gui_image = cv2.rectangle(gui_image, (300,800),(300+int(pct/100.0*1300),800+tileSize),0,-1)
-			gui_image = cv2.rectangle(gui_image, (300,800),(1600,800+tileSize),0,2)
-			#gui_image = addImagesTransparent(gui_image,gui_pct_text,350,850,255)
+			#pct_max = 100.0 * (structor.state - 8) / 5.0			
+			#pct = min(pct,pct_max)
+			pct = 100.0 * (structor.ident_state / 22466.0)
+			gui_image = clearOut(gui_image,int(displaySize[0]/2-375),int(displaySize[1]/2-375),750,750,255)
+			if structor.state >= 13:
+				pct = 100.0
+			photo_progress = create_img_photo_progress(photo,750,pct)
+			gui_image = addImages(gui_image,photo_progress,int(displaySize[0]/2-375),int(displaySize[1]/2-375))
 			cv2.imshow(win_ui, gui_image) 
-			key = cv2.waitKey(5)
-			if structor.state == 15:
-				if pct >= 100.0:
-					pct = 100.0				
-					break
+			key = cv2.waitKey(1)
+			if structor.state == 15:	
+				time.sleep(0.5)					
+				break
 		time.sleep(waitAfterAnalysis)
 			
 		# Identification finished
@@ -317,7 +314,32 @@ def create_img_capture_counter(_text,w,h,size,iteration,totalIterations,numRotat
 	image = cv2.ellipse(image, center_coordinates, axesLength, angle, startAngle, endAngle, color, thickness)
 	return image
 	
+def create_img_photo(photo,size):
+	use_photo = photo.copy()
+	orig_size = np.shape(use_photo)
+	work_size = (int(1.41*orig_size[0]+200),int(1.41*orig_size[1]+200))
+	diff_size = (work_size[0]-orig_size[0],work_size[1]-orig_size[1])
+	image = np.empty(work_size,np.uint8)
+	image.fill(255)
+	image = cv2.ellipse(image, (int(work_size[1]/2),int(work_size[0]/2)), (int(work_size[1]/2),int(work_size[0]/2)), 0, 0, 360, 0, -1)
+	image = addImages(image, use_photo, int(diff_size[1]/2), int(diff_size[0]/2))
+	image = cv2.resize(image,(size,size))
+	return image
 	
+def create_img_photo_progress(photo,size,pct):
+	use_photo = photo.copy()
+	orig_size = np.shape(use_photo)
+	diff_size = (size-orig_size[0],size-orig_size[1])
+	if orig_size[0] < size:
+		use_photo = cv2.resize(use_photo,(size-50,size-50))
+		diff_size = (size-orig_size[0],size-orig_size[1])
+	work_size = (size,size)
+	image = np.empty(work_size,np.uint8)
+	image.fill(255)
+	image = addImages(image, use_photo, int(diff_size[1]/2), int(diff_size[0]/2))
+	end_angle = (pct / 100.0) * 360 - 90
+	image = cv2.ellipse(image, (int(work_size[1]/2),int(work_size[0]/2)), (int(work_size[1]/2 - diff_size[1]/4),int(work_size[0]/2 - diff_size[0]/4)), 0, -90, end_angle, 0, 15)
+	return image
 	
 	
 def clearOut(img,x,y,w,h,color):
